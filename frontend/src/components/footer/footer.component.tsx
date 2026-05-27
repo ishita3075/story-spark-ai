@@ -55,8 +55,8 @@ const FooterComponent = () => {
   ];
 
   const legalLinks = [
-    { label: "Privacy Policy", to: "/privacy-policy" },
-    { label: "Terms & Conditions", to: "/terms" },
+    { label: "Privacy", to: "/privacy-policy" },
+    { label: "Terms", to: "/terms" },
     { label: "Guidelines", to: "/guidelines" },
   ];
 
@@ -174,39 +174,29 @@ const FooterComponent = () => {
               ))}
             </ul>
           </div>
-          {/* Legal */}
+          {/* Follow Us */}
           <div className="col-span-6 md:col-span-2 flex flex-col gap-4">
             <h3 className="text-[11.5px] font-bold tracking-[0.22em] uppercase text-white/70">
-              Legal
+              Follow Us
             </h3>
 
             <ul className="flex flex-col gap-[12.5px]">
-              {legalLinks.map(({ label, to }) => (
-                <li key={to}>
-                  <Link
-                    to={to}
-                    className="text-slate-300/85 hover:text-blue-300"
+              {socialLinks.map((item) => (
+                <li key={item.icon}>
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex items-center gap-2.5 text-[14px] text-slate-300/85 hover:text-blue-300 transition-all duration-200"
                   >
-                    {label}
-                  </Link>
+                    <i
+                      className={`fa-brands ${item.icon} text-[15px] text-slate-400 group-hover:text-blue-300 transition-colors`}
+                    />
+                    <span className="capitalize">{item.icon.replace("fa-", "")}</span>
+                  </a>
                 </li>
               ))}
             </ul>
-
-            <div className="flex gap-3 pt-2">
-              {socialLinks.map((item) => (
-                <a
-                  key={item.icon}
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <i
-                    className={`fa-brands ${item.icon} text-slate-300 hover:text-blue-300 transition-colors`}
-                  />
-                </a>
-              ))}
-            </div>
           </div>
           {/* Newsletter */}
           <div className="col-span-12 md:col-span-3 flex flex-col gap-4">
