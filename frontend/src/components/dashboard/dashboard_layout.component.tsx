@@ -259,9 +259,11 @@ const { data } = useGetProfileInfoQuery();
         >
           <nav className="p-4 space-y-2 overflow-y-auto h-full">
             {accessibleMenuItems.map((item) => {
-              const isActive =
-                location.pathname === item.path ||
-                location.pathname.startsWith(item.path + "/");
+             const isActive =
+  item.path === "/dashboard"
+    ? location.pathname === "/dashboard"
+    : location.pathname === item.path ||
+      location.pathname.startsWith(item.path + "/");
 
               return (
                 <div key={item.name}>
