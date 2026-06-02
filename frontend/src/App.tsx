@@ -1,7 +1,6 @@
 import React from "react";
 
 import { createBrowserRouter, Navigate, Outlet, RouterProvider } from "react-router-dom";
-
 import { USER_ROLE } from "./constants/role";
 import { getUserInfo } from "./services/auth.service";
 
@@ -81,14 +80,14 @@ const router = createBrowserRouter([
   {
     path: "/",
     element: (
-      <>
+      <div className="w-full box-border relative">
         <ScrollToTopButton />
         <MagicCursorComponent />
         <ScrollToTop />
         <RootLayout>
           <Outlet />
         </RootLayout>
-      </>
+      </div>
     ),
     children: [
       { index: true, element: <><HeroSectionComponent /><HomeComponent /></> },
