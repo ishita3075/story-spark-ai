@@ -1,22 +1,29 @@
-﻿import React, { useEffect, useState, useRef } from "react";
-import { getShortenedText, ITopicData, topicsData,  } from "./stories.utils";
+import React, { useEffect, useState, useRef, useMemo } from "react";
+import { getShortenedText, ITopicData, topicsData, getWordCount, SELECTED_TOPIC_CLASSES } from "./stories.utils";
 import toast, { Toaster } from "react-hot-toast";
 import { useCreatePostMutation, useDeletePostMutation } from "../../redux/apis/post.api";
+import { useGetProfileInfoQuery } from "../../redux/apis/user.api";
+import jsPDF from "jspdf";
+import StoryWorldMap from "../story-map/StoryWorldMap";
+import StoryRemix from "../remix/StoryRemix";
+import BookmarkButton from "../BookmarkButton";
+import logo from "../../assets/logoNew.png";
 import StoryGeneratingAnimation from "../loading/story-generating-animation.component";
+import AudioPlayer, { type AudioPlayerHandle, type NarrationPlaybackState } from "../AudioPlayer";
+import { useLocation } from "react-router-dom";
+ImageFallback
 import {
   useGenerateAlternateEndingsMutation,
   useGenerateFreeAlternateEndingsMutation,
 } from "../../redux/apis/ai.model.api";
+import ImageFallback from "../ImageFallback";
 export interface IStories {
   uuid: string;
   title: string;
   content: string;
   tag: string;
-  emotions?: string[];
-  enhancedPrompt?: string;
   imageURL: string;
   language?: string;
-  genre?: string;
 }
 
 interface IPost extends IStories {
@@ -31,268 +38,46 @@ interface StoriesComponentProps {
   isLoading?: boolean;
 }
 
-/* ─── Inline styles (no extra CSS file needed) ─── */
-const styles: Record<string, React.CSSProperties> = {
-  /* action bar */
-  actionBar: {
-    display: "flex",
-    flexWrap: "wrap" as const,
-    gap: "8px",
-    marginBottom: "16px",
-    alignItems: "center",
-  },
-  actionBtn: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "7px 14px",
-    borderRadius: "8px",
-    fontSize: "13px",
-    fontWeight: 600,
-    border: "1px solid rgba(255,255,255,0.12)",
-    cursor: "pointer",
-    transition: "all 0.18s ease",
-    background: "rgba(255,255,255,0.06)",
-    color: "#d1d5db",
-    backdropFilter: "blur(6px)",
-  },
-  publishBtn: {
-    background: "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)",
-    border: "none",
-    color: "#fff",
-    padding: "8px 22px",
-    borderRadius: "8px",
-    fontSize: "13px",
-    fontWeight: 700,
-    cursor: "pointer",
-    transition: "opacity 0.2s",
-    boxShadow: "0 4px 14px rgba(99,102,241,0.45)",
-  },
-
-  /* narration card */
-  narrationCard: {
-    background: "rgba(15, 23, 42, 0.7)",
-    border: "1px solid rgba(99, 102, 241, 0.25)",
-    borderRadius: "16px",
-    padding: "20px 24px",
-    marginTop: "20px",
-    backdropFilter: "blur(12px)",
-    boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
-  },
-  narrationHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "16px",
-  },
-  narrationTitle: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    color: "#e2e8f0",
-    fontWeight: 700,
-    fontSize: "15px",
-  },
-  readyBadge: {
-    background: "rgba(16, 185, 129, 0.15)",
-    border: "1px solid rgba(16,185,129,0.4)",
-    color: "#34d399",
-    fontSize: "11px",
-    fontWeight: 600,
-    borderRadius: "20px",
-    padding: "3px 10px",
-    letterSpacing: "0.04em",
-  },
-  storySubtitle: {
-    color: "#64748b",
-    fontSize: "12px",
-    marginTop: "2px",
-  },
-
-  /* playback controls */
-  controls: {
-    display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
-    gap: "10px",
-    marginBottom: "20px",
-  },
-  playBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "7px",
-    padding: "10px 0",
-    borderRadius: "10px",
-    fontSize: "13px",
-    fontWeight: 600,
-    cursor: "pointer",
-    border: "none",
-    transition: "all 0.18s ease",
-    background: "linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%)",
-    color: "#93c5fd",
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
-  },
-  pauseBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "7px",
-    padding: "10px 0",
-    borderRadius: "10px",
-    fontSize: "13px",
-    fontWeight: 600,
-    cursor: "pointer",
-    border: "1px solid rgba(255,255,255,0.1)",
-    background: "rgba(30,41,59,0.8)",
-    color: "#94a3b8",
-    transition: "all 0.18s ease",
-  },
-  resumeBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "7px",
-    padding: "10px 0",
-    borderRadius: "10px",
-    fontSize: "13px",
-    fontWeight: 600,
-    cursor: "pointer",
-    border: "1px solid rgba(16,185,129,0.3)",
-    background: "rgba(6,78,59,0.45)",
-    color: "#34d399",
-    transition: "all 0.18s ease",
-  },
-  stopBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "7px",
-    padding: "10px 0",
-    borderRadius: "10px",
-    fontSize: "13px",
-    fontWeight: 600,
-    cursor: "pointer",
-    border: "1px solid rgba(239,68,68,0.3)",
-    background: "rgba(127,29,29,0.4)",
-    color: "#f87171",
-    transition: "all 0.18s ease",
-  },
-
-  /* progress section */
-  progressRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "8px",
-  },
-  progressLabel: { color: "#64748b", fontSize: "12px", fontWeight: 500 },
-  progressWords: { color: "#94a3b8", fontSize: "12px" },
-  progressTrack: {
-    width: "100%",
-    height: "5px",
-    background: "rgba(255,255,255,0.08)",
-    borderRadius: "99px",
-    overflow: "hidden",
-    marginBottom: "8px",
-  },
-  progressFill: {
-    height: "100%",
-    background: "linear-gradient(90deg, #6366f1 0%, #a855f7 100%)",
-    borderRadius: "99px",
-    transition: "width 0.4s ease",
-  },
-  progressFooter: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  statusText: { color: "#64748b", fontSize: "11px", fontStyle: "italic" },
-
-  /* speed select */
-  speedWrap: { display: "flex", alignItems: "center", gap: "8px" },
-  speedLabel: { color: "#64748b", fontSize: "11px", fontWeight: 500 },
-  speedSelect: {
-    background: "rgba(30,41,59,0.9)",
-    border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: "7px",
-    color: "#cbd5e1",
-    fontSize: "12px",
-    padding: "4px 8px",
-    cursor: "pointer",
-    outline: "none",
-  },
+type StorySentenceSegment = {
+  id: string;
+  text: string;
+  startWordIndex: number;
+  endWordIndex: number;
 };
 
-/* ─── Playback sub-component ─── */
-const NarrationPlayer: React.FC<{ title: string }> = ({ title }) => {
-  const [progress] = useState(24);
-  const [wordCount] = useState({ current: 12, total: 50 });
+const buildSentenceSegments = (content: string): StorySentenceSegment[] => {
+  if (!content.trim()) {
+    return [];
+  }
 
-  return (
-    <div style={styles.narrationCard}>
-      {/* Header */}
-      <div style={styles.narrationHeader}>
-        <div>
-          <div style={styles.narrationTitle}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-            </svg>
-            Listen to this story
-          </div>
-          <div style={styles.storySubtitle}>{title}</div>
-        </div>
-        <span style={styles.readyBadge}>● Ready to narrate</span>
-      </div>
+  const sentenceMatches = content.match(/[^.!?]+[.!?]*\s*/g) ?? [content];
+  const segments: StorySentenceSegment[] = [];
+  let wordCursor = 0;
 
-      {/* Controls — contained grid, no overflow */}
-      <div style={styles.controls}>
-        <button style={styles.playBtn}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-          Play
-        </button>
-        <button style={styles.pauseBtn}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          Pause
-        </button>
-        <button style={styles.resumeBtn}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.51"/></svg>
-          Resume
-        </button>
-        <button style={styles.stopBtn}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-          Stop
-        </button>
-      </div>
+  sentenceMatches.forEach((sentence, index) => {
+    const trimmedSentence = sentence.trim();
+    if (!trimmedSentence) {
+      return;
+    }
 
-      {/* Progress */}
-      <div style={styles.progressRow}>
-        <span style={styles.progressLabel}>Progress</span>
-        <span style={styles.progressWords}>{wordCount.current} / {wordCount.total} words</span>
-      </div>
-      <div style={styles.progressTrack}>
-        <div style={{ ...styles.progressFill, width: `${progress}%` }} />
-      </div>
-      <div style={styles.progressFooter}>
-        <span style={styles.statusText}>Narration paused</span>
-        <div style={styles.speedWrap}>
-          <span style={styles.speedLabel}>Playback speed</span>
-          <select style={styles.speedSelect} defaultValue="1">
-            <option value="0.5">0.5×</option>
-            <option value="0.75">0.75×</option>
-            <option value="1">1×</option>
-            <option value="1.25">1.25×</option>
-            <option value="1.5">1.5×</option>
-            <option value="2">2×</option>
-          </select>
-        </div>
-      </div>
-    </div>
-  );
+    const wordsInSentence = sentence.match(/\S+/g)?.length ?? 0;
+    const startWordIndex = wordCursor;
+    const endWordIndex =
+      wordsInSentence > 0 ? wordCursor + wordsInSentence - 1 : wordCursor;
+
+    segments.push({
+      id: `${index}-${startWordIndex}-${endWordIndex}`,
+      text: sentence,
+      startWordIndex,
+      endWordIndex,
+    });
+
+    wordCursor += wordsInSentence;
+  });
+
+  return segments;
 };
 
-/* ─── Main component ─── */
 const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
   stories,
   isLogin,
@@ -300,16 +85,23 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
   isLoading,
   onPublishSuccess,
 }) => {
-  
+  const location = useLocation();
+  const audioPlayerRef = useRef<AudioPlayerHandle>(null);
 
   // Start with a clean state that adapts dynamically
   const [selectedStory, setSelectedStory] = useState<IStories | null>(null);
   const [topics, setTopics] = useState<ITopicData[]>(topicsData);
   const [selectTopics, setSelectTopics] = useState<ITopicData[]>([]);
+  const [newTopicTitle, setNewTopicTitle] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [showWorldMap, setShowWorldMap] = useState<boolean>(false);
   const [createPost] = useCreatePostMutation();
   const [deletePost] = useDeletePostMutation();
+  const { data: profile } = useGetProfileInfoQuery(undefined, { skip: !isLogin });
+  const lastSavedContentRef = useRef<string>("");
+  const isSavingRef = useRef<boolean>(false);
+  const hasSavedSessionRef = useRef<boolean>(false);
   const savedPostIdRef = useRef<string | null>(null);
   // Alternate ending state & hooks
   const [endingsCache, setEndingsCache] = useState<{
@@ -320,6 +112,8 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
   }>({});
   const [isGeneratingEndings, setIsGeneratingEndings] = useState<boolean>(false);
   const [activeEndingTab, setActiveEndingTab] = useState<string>("Happy Ending");
+  const [narrationWordIndex, setNarrationWordIndex] = useState<number>(0);
+  const [narrationState, setNarrationState] = useState<NarrationPlaybackState>("idle");
 
   const [generateAlternateEndings] = useGenerateAlternateEndingsMutation();
   const [generateFreeAlternateEndings] = useGenerateFreeAlternateEndingsMutation();
@@ -474,31 +268,419 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
   }, [topics]);
 
   useEffect(() => {
-    if (stories && stories.length > 0) setSelectedStory(stories[0]);
+    const player = audioPlayerRef.current;
+    return () => {
+      player?.stop();
+    };
+  }, [location.pathname]);
+
+  useEffect(() => {
+    setNarrationWordIndex(0);
+    setNarrationState("idle");
+  }, [selectedStory?.uuid]);
+
+  const sentenceSegments = useMemo(() => {
+    return buildSentenceSegments(selectedStory?.content ?? "");
+  }, [selectedStory?.content]);
+
+  // Sync state instantly whenever a new template is submitted or selected
+  useEffect(() => {
+    if (stories && stories.length > 0) {
+      setSelectedStory(stories[0]);
+    } else {
+      setSelectedStory(null);
+    }
+    // Reset auto-save status for new story session
+    lastSavedContentRef.current = "";
+    hasSavedSessionRef.current = false;
+    savedPostIdRef.current = null;
   }, [stories]);
 
-  const handelStorySelection = (story: IStories) => setSelectedStory(story);
+  useEffect(() => {
+    const autoSaveStory = async () => {
+      // 1. Prevent guest auto-save requests
+      if (!isLogin || !selectedStory) return;
 
-  const handleTopicClick = (index: number) => {
-    const updated = [...topics];
-    updated[index].selected = !updated[index].selected;
-    setTopics(updated);
+      // 2. Prevent duplicate auto-save requests for unchanged story content
+      if (selectedStory.content === lastSavedContentRef.current) {
+        return;
+      }
+
+      // 3. Only one draft/post is created per story session (prevent variation/topic duplicates)
+      if (hasSavedSessionRef.current) {
+        return;
+      }
+
+      // 4. Prevent duplicate network calls while a save is already running
+      if (isSavingRef.current) return;
+
+      isSavingRef.current = true;
+
+      const post: IPost = {
+        ...selectedStory,
+        topic: selectTopics,
+      };
+
+      try {
+        const result = await createPost(post).unwrap();
+        if (result && result.data && result.data._id) {
+          savedPostIdRef.current = result.data._id;
+        }
+        lastSavedContentRef.current = selectedStory.content;
+        hasSavedSessionRef.current = true;
+        toast.success("Story auto-saved!");
+      } catch (error) {
+        console.error("Auto-save failed", error);
+      } finally {
+        isSavingRef.current = false;
+      }
+    };
+
+    // Debounce to prevent multiple immediate renders/rerenders from triggering save
+    const timer = setTimeout(() => {
+      autoSaveStory();
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [selectedStory, selectedStory?.content, isLogin, selectTopics, createPost]);
+
+  const handelStorySelection = (story: IStories) => {
+    setSelectedStory(story);
   };
 
+  const handleTopicClick = (index: number) => {
+    setTopics((currentTopics) =>
+      currentTopics.map((topic, topicIndex) =>
+        topicIndex === index
+          ? { ...topic, selected: !topic.selected }
+          : topic
+      )
+    );
+  };
+  const handleAddTopic = () => {
+    const title = newTopicTitle.trim();
 
-  async function handleCopyStory() {
+    if (!title) {
+      toast.error("Please enter a topic.");
+      return;
+    }
+
+    const normalizedTitle = title.startsWith("#") ? title : `#${title}`;
+    const topicExists = topics.some(
+      (topic) => topic.title.toLowerCase() === normalizedTitle.toLowerCase()
+    );
+
+    if (topicExists) {
+      toast.error("This topic already exists.");
+      return;
+    }
+
+    setTopics((currentTopics) => [
+      ...currentTopics,
+      {
+        title: normalizedTitle,
+        className: SELECTED_TOPIC_CLASSES,
+        color: SELECTED_TOPIC_CLASSES,
+        selected: true,
+      },
+    ]);
+    setNewTopicTitle("");
+  };
+
+  const handleRemoveTopic = (index: number) => {
+    if (topics.length <= 2) {
+      toast.error("At least 2 topics are required.");
+      return;
+    }
+
+    setTopics((currentTopics) =>
+      currentTopics.filter((_, topicIndex) => topicIndex !== index)
+    );
+  };
+  const handleCopyStory = async () => {
     if (selectedStory?.content) {
       await navigator.clipboard.writeText(selectedStory.content);
       setIsCopied(true);
       toast.success("Story copied!");
       setTimeout(() => setIsCopied(false), 2000);
     }
-  }
+  };
 
+  const handleExportPDF = async () => {
+    if (!selectedStory) { toast.error("No story available to export."); return; }
+    if (!selectedStory.content?.trim()) {toast.error("Story content is empty. Cannot export.");return;}
+    const toastId = toast.loading("Preparing your premium PDF...");
+
+    try {
+      // Helper to load image assets asynchronously with a safe timeout
+      const loadImageWithTimeout = (src: string, timeoutMs: number = 3000): Promise<HTMLImageElement> => {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          const timeout = setTimeout(() => {
+            img.src = ""; // stop loading
+            reject(new Error(`Timeout loading image: ${src}`));
+          }, timeoutMs);
+
+          img.onload = () => {
+            clearTimeout(timeout);
+            resolve(img);
+          };
+          img.onerror = (e) => {
+            clearTimeout(timeout);
+            reject(e);
+          };
+          img.src = src;
+        });
+      };
+
+      let logoImg: HTMLImageElement | null = null;
+      let storyImg: HTMLImageElement | null = null;
+
+      try {
+        logoImg = await loadImageWithTimeout(logo);
+      } catch (err) {
+        console.warn("Failed to load StorySparkAI logo for PDF", err);
+      }
+
+      if (selectedStory.imageURL) {
+        try {
+          storyImg = await loadImageWithTimeout(selectedStory.imageURL);
+        } catch (err) {
+          console.warn("Failed to load story banner image for PDF", err);
+        }
+      }
+
+      // Initialize A4 PDF document (210mm x 297mm)
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const title = selectedStory.title || "Untitled Story";
+      const content = selectedStory.content || "";
+      const tag = (selectedStory.tag || "STORY").toUpperCase();
+
+      const leftMargin = 20;
+      const rightMargin = 20;
+      const topMargin = 20;
+      const bottomMargin = 20;
+      const printableWidth = 210 - leftMargin - rightMargin; // 170 mm
+      const maxY = 297 - bottomMargin - 10; // Bottom boundary (267mm) leaving room for footer
+
+      let yCursor = topMargin;
+
+      // 1. Header (Logo & Sub-header)
+      if (logoImg) {
+        const logoHeight = 8;
+        const logoWidth = (logoImg.width / logoImg.height) * logoHeight;
+        doc.addImage(logoImg, "PNG", leftMargin, yCursor, logoWidth, logoHeight);
+      } else {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(99, 102, 241); // Brand Indigo
+        doc.text("StorySparkAI", leftMargin, yCursor + 6);
+      }
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("PREMIUM AI GENERATED STORY", 190, yCursor + 5, { align: "right" });
+
+      yCursor += 10;
+
+      // Header Divider Line
+      doc.setDrawColor(99, 102, 241); // Brand Indigo
+      doc.setLineWidth(0.5);
+      doc.line(leftMargin, yCursor, 190, yCursor);
+
+      yCursor += 8;
+
+      // 2. Story Banner Image (only on Page 1)
+      if (storyImg) {
+        const bannerHeight = 55;
+        doc.addImage(storyImg, "JPEG", leftMargin, yCursor, printableWidth, bannerHeight);
+        yCursor += bannerHeight + 8;
+      }
+
+      // 3. Story Title
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(22);
+      doc.setTextColor(30, 41, 59); // Slate 800
+      const splitTitle = doc.splitTextToSize(title, printableWidth);
+      splitTitle.forEach((line: string) => {
+        doc.text(line, leftMargin, yCursor);
+        yCursor += 9;
+      });
+
+      yCursor += 1;
+
+      // 4. Meta Row (Generated Date & Genre Pill Badge)
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139); // Slate 500
+      const formattedDate = new Date().toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+      doc.text(`Generated on ${formattedDate}`, leftMargin, yCursor);
+
+      // Genre pill badge on the right
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      const tagWidth = doc.getTextWidth(tag);
+      const chipWidth = tagWidth + 5;
+      const chipHeight = 5;
+      const chipX = 190 - chipWidth;
+      const chipY = yCursor - 3.8;
+
+      doc.setFillColor(99, 102, 241); // Brand Indigo background
+      doc.roundedRect(chipX, chipY, chipWidth, chipHeight, 1, 1, "F");
+
+      doc.setTextColor(255, 255, 255); // White text inside pill
+      doc.text(tag, chipX + 2.5, chipY + 3.5);
+
+      yCursor += 4.5;
+
+      // Meta row bottom line
+      doc.setDrawColor(226, 232, 240); // Slate 200
+      doc.setLineWidth(0.2);
+      doc.line(leftMargin, yCursor, 190, yCursor);
+
+      yCursor += 10;
+
+      // 5. Story Paragraphs Flowing
+      const paragraphs = content.split(/\n+/);
+      const lineHeight = 6.5;
+      const paragraphSpacing = 4.5;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.setTextColor(30, 41, 59); // Slate 800
+
+      paragraphs.forEach((para: string, pIdx: number) => {
+        const cleanPara = para.trim();
+        if (!cleanPara) return;
+
+        const lines = doc.splitTextToSize(cleanPara, printableWidth);
+        lines.forEach((line: string) => {
+          if (yCursor > maxY) {
+            doc.addPage();
+            yCursor = 30; // Top padding for subsequent pages
+          }
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(11);
+          doc.setTextColor(30, 41, 59); // Slate 800
+          doc.text(line, leftMargin, yCursor);
+          yCursor += lineHeight;
+        });
+
+        if (pIdx < paragraphs.length - 1) {
+          yCursor += paragraphSpacing;
+        }
+      });
+
+      // 6. Running Header and Footer generation
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+
+        // Footer line
+        doc.setDrawColor(241, 245, 249);
+        doc.setLineWidth(0.25);
+        doc.line(leftMargin, 280, 190, 280);
+
+        // Footer Text
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139); // Slate 500
+        doc.text("Generated with StorySparkAI", leftMargin, 285);
+        doc.text(`Page ${i} of ${totalPages}`, 190, 285, { align: "right" });
+
+        // Header on pages 2+
+        if (i > 1) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(99, 102, 241); // Brand Indigo
+          doc.text("StorySparkAI", leftMargin, 14);
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8);
+          doc.setTextColor(148, 163, 184); // Slate 400
+          const headerTitle = title.length > 50 ? title.substring(0, 50) + "..." : title;
+          doc.text(headerTitle, 190, 14, { align: "right" });
+
+          doc.setDrawColor(241, 245, 249);
+          doc.setLineWidth(0.2);
+          doc.line(leftMargin, 17, 190, 17);
+        }
+      }
+
+      // Save PDF with sanitized name
+      const safeTitle = title.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+      doc.save(`${safeTitle}.pdf`);
+      toast.dismiss(toastId);
+      toast.success("Premium PDF downloaded!");
+    } catch (error) {
+      console.error(error);
+      toast.dismiss(toastId);
+      toast.error("Failed to export PDF.");
+    }
+  };
+
+  const handleExportMarkdown = () => {
+    if (!selectedStory) { toast.error("No story available to export."); return; }
+    if (!selectedStory.content?.trim()) {toast.error("Story content is empty. Cannot export.");return;}
+    try {
+      const title = selectedStory.title || "Story";
+      const content = selectedStory.content || "";
+      const tag = selectedStory.tag || "General";
+      const authorName = isLogin && profile?.name ? profile.name : "Anonymous";
+      const isoDate = new Date().toISOString().split("T")[0];
+      const markdownContent = `---\ntitle: "${title.replace(/"/g, '\\"')}"\ntag: "${tag.replace(/"/g, '\\"')}"\nauthor: "${authorName.replace(/"/g, '\\"')}"\ndate: "${isoDate}"\n---\n\n# ${title}\n\n${content}\n`;
+      const blob = new Blob([markdownContent], { type: "text/markdown;charset=utf-8;" });
+      downloadBlob(blob, getSafeFileName(title, "md"));
+      toast.success("Markdown downloaded!");
+    } catch (error) { console.error(error); toast.error("Failed to export Markdown."); }
+  };
+
+  const handleExportDOCX = () => {
+    if (!selectedStory) { toast.error("No story available to export."); return; }
+    if (!selectedStory.content?.trim()) {toast.error("Story content is empty. Cannot export.");return;}
+    try {
+      const title = selectedStory.title || "Untitled Story";
+      const docxBlob = createDocxBlob({
+        title,
+        content: selectedStory.content || "",
+        tag: selectedStory.tag || "Story",
+        author: isLogin && profile?.name ? profile.name : "Anonymous",
+      });
+      downloadBlob(docxBlob, getSafeFileName(title, "docx"));
+      toast.success("DOCX downloaded!");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to export DOCX.");
+    }
+  };
   const handelPublishStory = async () => {
-    if (!isLogin) { toast.error("Please login to publish the story."); return; }
-    if (!selectedStory) { toast.error("No story available. Please generate a story first."); return; }
-    const post: IPost = { ...selectedStory, topic: selectTopics };
+    if (!isLogin) {
+      toast.error("Please login to publish the story.");
+      return;
+    }
+    if (!selectedStory) {
+      toast.error("No story available. Please generate a story first.");
+      return;
+    }
+    if (selectTopics.length < 2) {
+      toast.error("Please select at least 2 topics.");
+      return;
+    }
+    const post: IPost = {
+      ...selectedStory,
+      topic: selectTopics,
+    };
     setLoading(true);
     try {
       if (savedPostIdRef.current) {
@@ -522,7 +704,12 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
     }
   };
 
- 
+  const calculateReadingTime = (content: string): number => {
+    const words = getWordCount(content);
+    return Math.max(1, Math.ceil(words / 200));
+  };
+
+  const isNarrationActive = narrationState !== "idle";
 
 
 if (isLoading) {
@@ -537,111 +724,239 @@ if (isLoading) {
   }
 
   return (
-    <div className="mt-16 px-4 sm:px-6 md:px-10 pb-10">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-        {/* ── LEFT COLUMN ── */}
-        <div className="col-span-1 lg:col-span-8">
-
-          {/* Title + story bubbles */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-5">
-            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-300 to-blue-400">
-              {selectedStory?.title}
-            </h1>
-            <div className="flex justify-end">
-              <div className="flex -space-x-4">
-                {stories && stories.length > 0 ? (
+    <div className="mt-16 px-4 sm:px-6 lg:px-8 max-w-8xl mx-auto pb-10">
+      <style>
+        {`
+          @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          .animate-fade-in-up {
+            animation: fadeInUp 0.6s ease-out forwards;
+          }
+        `}
+      </style>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fade-in-up">
+        <div className="col-span-1 lg:col-span-8 flex flex-col">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+            <div>
+              <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-300 to-blue-400 mb-2">
+                {selectedStory?.title}
+              </h1>
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center rounded-full bg-purple-900/60 text-purple-300 border border-purple-700/50 py-1 px-3 text-xs font-semibold">
+                  ≡ƒÄ¡ {selectedStory.tag}
+                </span>
+                <span className="inline-flex items-center rounded-full bg-blue-900/60 text-blue-300 border border-blue-700/50 py-1 px-3 text-xs font-semibold">
+                  ≡ƒîÉ {selectedStory.language || "English"}
+                </span>
+                {selectedStory.emotions && selectedStory.emotions.length > 0 && (
+                  <span className="inline-flex items-center rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 py-1 px-3 text-xs font-semibold">
+                    ≡ƒÿè {selectedStory.emotions.join(", ")}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-start sm:justify-end">
+              <div className="flex -space-x-5">
+                {stories && stories.length > 0 && (
                   stories.map((story) => (
                     <button
                       key={story.uuid}
-                      className={`relative w-14 h-14 rounded-full border-2 ${
+                      className={`relative w-16 h-16 rounded-full border-2 ${
                         selectedStory?.uuid === story.uuid
                           ? "border-blue-500 scale-110"
-                          : "border-white/20"
-                      } hover:scale-110 transition-transform duration-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-600`}
+                          : "border-white"
+                      } hover:scale-110 transition-transform duration-200 focus:outline-none`}
                       onClick={() => handelStorySelection(story)}
                     >
-                      <img src={story.imageURL} alt={story.title} className="w-full h-full object-cover rounded-full" />
+                      <img
+                        src={story.imageURL}
+                        alt={story.title}
+                        className="w-full h-full object-cover rounded-full"
+                      />
                     </button>
                   ))
-                ) : (
-                  <span className="text-gray-400 text-sm">No stories available.</span>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Story card */}
-          <div className="bg-blue-500/10 border border-gray-600 p-6 rounded-2xl shadow-lg">
-            {/* Action toolbar */}
-            <div style={styles.actionBar}>
-              {selectedStory && (
-                <button style={styles.actionBtn} onClick={handleCopyStory}>
-                  {isCopied ? "✓" : "📋"} {isCopied ? "Copied" : "Copy"}
+          <div className="bg-slate-800/80 backdrop-blur-xl border border-slate-700/50 p-8 rounded-2xl shadow-2xl relative overflow-hidden">
+            <div className="absolute top-[-50px] right-[-50px] w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute bottom-[-50px] left-[-50px] w-48 h-48 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <h3 className="text-xl font-bold text-slate-200 relative z-10">
+                Generated Story
+              </h3>
+              <div className="flex flex-wrap items-center gap-2 relative z-10">
+                <button
+                  type="button"
+                  className="rounded-lg px-4 py-2 bg-slate-700 text-slate-200 font-semibold cursor-pointer hover:bg-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleCopyStory}
+                  disabled={!selectedStory}
+                >
+                  {isCopied ? "✓ Copied" : "📋 Copy"}
                 </button>
-              )}
-              <button style={styles.actionBtn}>📄 Export PDF</button>
-              <button style={styles.actionBtn}>⬇ Export Markdown</button>
-              <button style={styles.actionBtn}>🗺 World Map</button>
-              <button style={styles.actionBtn}>✨ Remix</button>
-              <button style={styles.actionBtn}>🌐 Translate</button>
-              <button
-                style={{
-                  ...styles.publishBtn,
-                  opacity: loading ? 0.6 : 1,
-                  cursor: loading ? "not-allowed" : "pointer",
-                }}
-                onClick={handelPublishStory}
-                disabled={loading}
-              >
-                {loading ? "Publishing…" : "Publish"}
-              </button>
+                <button
+                  type="button"
+                  className="rounded-lg px-4 py-2 bg-purple-700 text-slate-200 font-semibold cursor-pointer hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleExportPDF}
+                  disabled={!selectedStory}
+                >
+                  📄 Export PDF
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg px-4 py-2 bg-indigo-700 text-slate-200 font-semibold cursor-pointer hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleExportMarkdown}
+                  disabled={!selectedStory}
+                >
+                  ⬇️ Export Markdown
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg px-4 py-2 bg-violet-700 text-slate-200 font-semibold cursor-pointer hover:bg-violet-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => setShowWorldMap(true)}
+                  disabled={!selectedStory}
+                >
+                  ≡ƒù║∩╕Å World Map
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg px-4 py-2 bg-fuchsia-700 text-slate-200 font-semibold cursor-pointer hover:bg-fuchsia-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => setShowRemix(true)}
+                  disabled={!selectedStory}
+                >
+                  ≡ƒöÇ Remix
+                </button>
+                <button
+                  type="button"
+                  id="publish-story-btn"
+                  className={`rounded-lg px-5 py-2 font-semibold flex items-center space-x-2 cursor-pointer bg-blue-600 text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    loading ? "" : "hover:bg-blue-500 hover:shadow-lg active:scale-95"
+                  }`}
+                  onClick={handelPublishStory}
+                  disabled={loading || !selectedStory}
+                >
+                  {loading ? "Publishing..." : "Publish"}
+                </button>
+              </div>
             </div>
 
-            {/* Story text */}
-            <div className="prose max-w-none text-gray-300 text-sm sm:text-base leading-relaxed">
-              {selectedStory ? (
-                <p className="break-words">{selectedStory.content}</p>
-              ) : (
-                <p className="text-gray-500">No story available. Please generate a story first.</p>
-              )}
+            {selectedStory.enhancedPrompt && (
+              <div className="mb-6 p-4 bg-indigo-900/30 border border-indigo-700/50 rounded-xl relative z-10">
+                <h4 className="text-sm font-semibold text-indigo-300 mb-2 flex items-center gap-2">
+                  <i className="fas fa-wand-magic-sparkles"></i> AI Enhanced Prompt
+                </h4>
+                <p className="text-slate-300 text-sm italic break-words whitespace-pre-wrap">
+                  {selectedStory.enhancedPrompt}
+                </p>
+              </div>
+            )}
+
+            <div id="story-content" className="prose prose-invert max-w-none text-slate-300 leading-relaxed tracking-wide relative z-10">
+              <p className="break-words whitespace-pre-wrap">
+                {sentenceSegments.length > 0 ? (
+                  sentenceSegments.map((segment: StorySentenceSegment) => {
+                    const isActiveSentence =
+                      isNarrationActive &&
+                      narrationWordIndex >= segment.startWordIndex &&
+                      narrationWordIndex <= segment.endWordIndex;
+
+                    return (
+                      <span
+                        key={segment.id}
+                        className={
+                          isActiveSentence
+                            ? "rounded-md bg-indigo-500/20 px-0.5 py-0.5 text-indigo-100 ring-1 ring-indigo-400/30"
+                            : undefined
+                        }
+                      >
+                        {segment.text}
+                      </span>
+                    );
+                  })
+                ) : (
+                  selectedStory.content
+                )}
+              </p>
             </div>
 
-            {/* Narration player — fully inside the card */}
-            {selectedStory && <NarrationPlayer title={selectedStory.title} />}
+            <div className="relative z-10 mt-6">
+              <AudioPlayer
+                ref={audioPlayerRef}
+                text={selectedStory.content}
+                title={selectedStory.title}
+                onWordIndexChange={setNarrationWordIndex}
+                onPlaybackStateChange={setNarrationState}
+              />
+            </div>
           </div>
-
-          {/* Continue story button */}
-          {selectedStory && (
-            <div className="mt-5">
-              <button className="px-6 py-3 rounded-xl font-bold text-white text-sm bg-gradient-to-r from-purple-600 to-fuchsia-500 hover:shadow-lg hover:shadow-fuchsia-500/30 transition-all duration-200">
-                Continue Story
-              </button>
-            </div>
-          )}
-
-          {/* Topics */}
-          <div className="mt-6">
-            <div className="bg-blue-500/10 border border-gray-600 rounded-2xl shadow-sm p-6">
-              <h3 className="text-base font-semibold text-gray-300 mb-4">Select Topics</h3>
+          <div className="mt-7">
+            <div className="bg-slate-800/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-xl p-6 mb-8">
+              <h3 className="text-lg font-bold text-slate-200 mb-4">
+                Select Topics
+              </h3>
+              <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                <input
+                  type="text"
+                  value={newTopicTitle}
+                  onChange={(event) => setNewTopicTitle(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleAddTopic();
+                    }
+                  }}
+                  placeholder="Add related topic"
+                  className="flex-1 rounded-lg border border-slate-600 bg-slate-900/70 px-4 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+                <button
+                  type="button"
+                  className="rounded-lg px-4 py-2 bg-blue-600 text-white font-semibold cursor-pointer hover:bg-blue-500 transition-colors"
+                  onClick={handleAddTopic}
+                >
+                  Add Topic
+                </button>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {selectedStory ? (
-                  topics.map((topic, index) => (
-                    <span
-                      key={index}
-                      className={`px-3 py-1 ${topic.color} rounded-full text-sm hover:brightness-110 cursor-pointer transition-all`}
-                      onClick={() => handleTopicClick(index)}
-                    >
-                      {topic.selected ? (
-                        <i className="fa-solid fa-check mr-1" />
-                      ) : (
-                        <i className="fa-solid fa-plus mr-1" />
-                      )}
-                      {topic.title}
-                    </span>
-                  ))
+                  <>
+                    {topics.map((topic, index) => (
+                      <span
+                        key={index}
+                        className={`inline-flex items-center gap-2 px-4 py-1.5 ${topic.className} rounded-full text-sm font-medium transition-transform hover:scale-105 shadow-sm`}
+                      >
+                        <button
+                          type="button"
+                          className="cursor-pointer"
+                          onClick={() => handleTopicClick(index)}
+                        >
+                          {topic.selected ? (
+                            <i className="fa-solid fa-check"></i>
+                          ) : (
+                            <i className="fa-solid fa-plus"></i>
+                          )}{" "}
+                          {topic.title}
+                        </button>
+                        <button
+                          type="button"
+                          className="cursor-pointer border-l border-current/30 pl-2 disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={() => handleRemoveTopic(index)}
+                          disabled={topics.length <= 2}
+                          aria-label={`Remove ${topic.title}`}
+                        >
+                          <i className="fa-solid fa-xmark"></i>
+                        </button>
+                      </span>
+                    ))}
+                  </>
                 ) : (
-                  <p className="text-gray-500 text-sm">No topics available. Please generate a story first.</p>
+                  <p className="text-gray-400">
+                    No topics available. Please generate a story first.
+                  </p>
                 )}
               </div>
             </div>
@@ -784,29 +1099,37 @@ if (isLoading) {
           </div>
         </div>
 
-        {/* ── RIGHT COLUMN (preview) ── */}
         <div className="col-span-1 lg:col-span-4">
-          <h1 className="text-2xl mb-4 bg-clip-text text-transparent bg-gradient-to-r from-purple-300 to-blue-400">
-            Preview
-          </h1>
-          <div className="bg-blue-500/10 border border-gray-600 rounded-2xl shadow-lg overflow-hidden">
-            {selectedStory ? (
-              <div className="flex flex-col">
-                <div className="m-2.5 overflow-hidden rounded-xl">
-                  <img
-                    src={selectedStory.imageURL}
-                    alt="card-image"
-                    className="w-full h-36 object-cover"
-                  />
-                </div>
-                <div className="px-4 pb-4 pt-1">
-                  <div className="mb-2 inline-flex items-center rounded-full bg-purple-600 py-1 px-3 text-xs font-semibold text-white shadow-sm">
-                    {selectedStory.tag.toUpperCase()}
+          <div className="mb-5">
+            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-300 to-blue-400">
+              Preview
+            </h1>
+          </div>
+          <div className="bg-slate-800/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl overflow-hidden group">
+            <div className="relative flex flex-col rounded-lg">
+              <div className="relative m-3 overflow-hidden text-white rounded-xl">
+                <ImageFallback
+                  src={selectedStory.imageURL}
+                  alt="card-image"
+                  className="w-full h-48 object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+              </div>
+              <div className="px-3 py-1">
+                <div className="flex justify-between items-center mb-2 w-full">
+                  <div className="flex items-center gap-2">
+                    <div className="inline-flex items-center rounded-full bg-purple-600 py-1 px-3 text-xs font-semibold text-white shadow-sm">
+                      {selectedStory.tag.toUpperCase()}
+                    </div>
+                    <div className="inline-flex items-center rounded-full bg-indigo-600 py-1 px-3 text-xs font-semibold text-white shadow-sm">
+                      ≡ƒîÉ {(selectedStory.language || "English").toUpperCase()}
+                    </div>
+                    <div className="inline-flex items-center rounded-full bg-slate-700 py-1 px-2.5 text-xs font-medium text-slate-300 shadow-sm gap-1">
+                      ΓÅ▒∩╕Å {calculateReadingTime(selectedStory.content)} min read
+                    </div>
                   </div>
-                  <h6 className="mb-1 text-gray-200 text-lg font-semibold">{selectedStory.title}</h6>
-                  <p className="text-gray-400 text-sm leading-relaxed break-words">
-                    {getShortenedText(selectedStory.content)}
-                  </p>
+                  <div>
+                    <BookmarkButton storyId={selectedStory.uuid} />
+                  </div>
                 </div>
                 <h6 className="mb-1 text-gray-300 text-xl font-semibold">
                   {selectedStory.title}
@@ -815,15 +1138,17 @@ if (isLoading) {
                   {getShortenedText(selectedStory.content)}
                 </p>
               </div>
-            ) : (
-              <div className="p-6 text-center text-gray-500 text-sm">
-                No story available. Please generate a story first.
-              </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
-
+      {showWorldMap && selectedStory && (
+        <StoryWorldMap
+          story={selectedStory.content}
+          title={selectedStory.title}
+          onClose={() => setShowWorldMap(false)}
+        />
+      )}
       <Toaster position="top-right" reverseOrder={false} />
     </div>
   );
