@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { connectSocket } from "../../socket/socket.oi";
 import { getUserInfo, isLoggedIn } from "../../services/auth.service";
-import { io } from "socket.io-client";
 
 export default function CollabHome() {
   const navigate = useNavigate();
@@ -33,9 +32,9 @@ export default function CollabHome() {
       collabSocket.emit(
         "collab:create_room",
         { userId: user?.userId, username: user?.name },
-        (response: { roomId: string } | null) => {
-          if (response && response.roomId) {
-            navigate(`/collab/${response.roomId}`);
+        (response: unknown) => {
+          if (response && (response as { roomId: string }).roomId) {
+            navigate(`/collab/${(response as { roomId: string }).roomId}`);
           } else {
             setError("Failed to create room. Please try again.");
           }
